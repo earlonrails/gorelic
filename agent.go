@@ -132,7 +132,6 @@ func (agent *Agent) WrapHTTPHandlerFunc(h tHTTPHandlerFunc, path string) tHTTPHa
 		proxy.timer = agent.HTTPTimer
 		myW := &statusLoggingResponseWriter{w, 200}
 		proxy.ServeHTTP(myW, req)
-		fmt.Println(myW.status)
 		agent.recordResponse(path, myW.status)
 	}
 }
