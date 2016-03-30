@@ -46,14 +46,14 @@ type Agent struct {
 	CollectGcStat               bool
 	CollectMemoryStat           bool
 	CollectHTTPStat             bool
-	CollectHTTPStatuses         bool
-	CollectHTTPErrors           bool
 	GCPollInterval              int
 	MemoryAllocatorPollInterval int
 	AgentGUID                   string
 	AgentVersion                string
 	plugin                      *newrelic_platform_go.NewrelicPlugin
 	HTTPTimer                   metrics.Timer
+	HTTPRequestCounter          metrics.Counter
+	HTTPRequestErrorCounter     metrics.Counter
 	HTTPStatusCounters          map[int]metrics.Counter
 	HTTPErrorCounters           map[int]metrics.Counter
 	HTTPPathErrorCounters       map[string]map[int]metrics.Counter
@@ -87,14 +87,18 @@ func NewAgent() *Agent {
 // our custom component
 type resettableComponent struct {
 	newrelic_platform_go.IComponent
-	statusCounters    map[int]metrics.Counter
-	errorCounters     map[int]metrics.Counter
-	errorPathCounters map[string]map[int]metrics.Counter
+	requestCounter      metrics.Counter
+	requestErrorCounter metrics.Counter
+	statusCounters      map[int]metrics.Counter
+	errorCounters       map[int]metrics.Counter
+	errorPathCounters   map[string]map[int]metrics.Counter
 }
 
 // newrelic_platform_go.IComponent interface implementation
 func (c resettableComponent) ClearSentData() {
 	c.IComponent.ClearSentData()
+	c.requestCounter.Clear()
+	c.requestErrorCounter.Clear()
 	for _, counter := range c.statusCounters {
 		counter.Clear()
 	}
@@ -108,14 +112,28 @@ func (c resettableComponent) ClearSentData() {
 	}
 }
 
+type statusLoggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusLoggingResponseWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
 //WrapHTTPHandlerFunc  instrument HTTP handler functions to collect HTTP metrics
-func (agent *Agent) WrapHTTPHandlerFunc(h tHTTPHandlerFunc) tHTTPHandlerFunc {
+func (agent *Agent) WrapHTTPHandlerFunc(h tHTTPHandlerFunc, path string) tHTTPHandlerFunc {
+	agent.registerHTTPPath(path)
 	agent.CollectHTTPStat = true
 	agent.initTimer()
 	return func(w http.ResponseWriter, req *http.Request) {
 		proxy := newHTTPHandlerFunc(h)
 		proxy.timer = agent.HTTPTimer
-		proxy.ServeHTTP(w, req)
+		myW := &statusLoggingResponseWriter{w, 200}
+		proxy.ServeHTTP(myW, req)
+		fmt.Println(myW.status)
+		agent.recordResponse(path, myW.status)
 	}
 }
 
@@ -160,29 +178,24 @@ func (agent *Agent) Run() error {
 
 	if agent.CollectHTTPStat {
 		agent.initTimer()
-		addHTTPMericsToComponent(component, agent.HTTPTimer)
+		agent.initStatusCounters()
+		agent.initErrorCounters()
+
+		addHTTPMericsToComponent(component, agent.HTTPTimer, agent.HTTPRequestCounter, agent.HTTPRequestErrorCounter)
 		agent.debug(fmt.Sprintf("Init HTTP metrics collection."))
+
+		component = &resettableComponent{component, agent.HTTPRequestCounter, agent.HTTPRequestErrorCounter, agent.HTTPStatusCounters, agent.HTTPErrorCounters, agent.HTTPPathErrorCounters}
+		addHTTPStatusMetricsToComponent(component, agent.HTTPStatusCounters)
+		agent.debug(fmt.Sprintf("Init HTTP status metrics collection."))
+
+		addHTTPErrorMetricsToComponent(component, agent.HTTPErrorCounters)
+		addHTTPPathErrorMetricsToComponent(component, agent.HTTPPathErrorCounters)
+		agent.debug(fmt.Sprintf("Init HTTP status metrics collection."))
 	}
 
 	for _, metric := range agent.CustomMetrics {
 		component.AddMetrica(metric)
 		agent.debug(fmt.Sprintf("Init %s metric collection.", metric.GetName()))
-	}
-
-	if agent.CollectHTTPStatuses {
-		agent.initStatusCounters()
-		component = &resettableComponent{component, agent.HTTPStatusCounters, nil, nil}
-		addHTTPStatusMetricsToComponent(component, agent.HTTPStatusCounters)
-		agent.debug(fmt.Sprintf("Init HTTP status metrics collection."))
-	}
-
-	if agent.CollectHTTPErrors {
-		agent.initErrorCounters()
-		//todo: check if component already is resettable then just set these fields
-		component = &resettableComponent{component, nil, agent.HTTPErrorCounters, agent.HTTPPathErrorCounters}
-		addHTTPErrorMetricsToComponent(component, agent.HTTPErrorCounters)
-		addHTTPPathErrorMetricsToComponent(component, agent.HTTPPathErrorCounters)
-		agent.debug(fmt.Sprintf("Init HTTP status metrics collection."))
 	}
 
 	// Init newrelic reporting plugin.
@@ -199,9 +212,22 @@ func (agent *Agent) Run() error {
 }
 
 //RegisterHTTPPath registers a path for error status tracking
-func (agent *Agent) RegisterHTTPPath(path string) {
+func (agent *Agent) registerHTTPPath(path string) {
 	if agent.HTTPPathErrorCounters[path] == nil {
 		agent.HTTPPathErrorCounters[path] = make(map[int]metrics.Counter)
+	}
+}
+
+//RecordResponse increments different counters accordingly for an HTTP request
+func (agent *Agent) recordResponse(path string, code int) {
+	agent.HTTPRequestCounter.Inc(1)
+	agent.HTTPStatusCounters[code].Inc(1)
+	if httpErrors[code] {
+		agent.HTTPRequestErrorCounter.Inc(1)
+		agent.HTTPErrorCounters[code].Inc(1)
+		if counters := agent.HTTPPathErrorCounters[path]; counters != nil {
+			counters[code].Inc(1)
+		}
 	}
 }
 
@@ -214,53 +240,25 @@ func (agent *Agent) initTimer() {
 
 //Initialize metrics.Counters objects, used to collect HTTP statuses
 func (agent *Agent) initStatusCounters() {
-	httpStatuses := []int{
-		http.StatusContinue, http.StatusSwitchingProtocols,
-
-		http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNonAuthoritativeInfo,
-		http.StatusNoContent, http.StatusResetContent, http.StatusPartialContent,
-
-		http.StatusMultipleChoices, http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
-		http.StatusNotModified, http.StatusUseProxy, http.StatusTemporaryRedirect,
-
-		http.StatusBadRequest, http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden,
-		http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotAcceptable, http.StatusProxyAuthRequired,
-		http.StatusRequestTimeout, http.StatusConflict, http.StatusGone, http.StatusLengthRequired,
-		http.StatusPreconditionFailed, http.StatusRequestEntityTooLarge, http.StatusRequestURITooLong, http.StatusUnsupportedMediaType,
-		http.StatusRequestedRangeNotSatisfiable, http.StatusExpectationFailed, http.StatusTeapot,
-
-		http.StatusInternalServerError, http.StatusNotImplemented, http.StatusBadGateway,
-		http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusHTTPVersionNotSupported,
-	}
-
 	agent.HTTPStatusCounters = make(map[int]metrics.Counter, len(httpStatuses))
 	for _, statusCode := range httpStatuses {
 		agent.HTTPStatusCounters[statusCode] = metrics.NewCounter()
 	}
+	agent.HTTPRequestCounter = metrics.NewCounter()
 }
 
 //Initialize metrics.Counters objects, used to collect HTTP statuses
 func (agent *Agent) initErrorCounters() {
-	httpStatuses := []int{
-		http.StatusBadRequest, http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden,
-		http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotAcceptable, http.StatusProxyAuthRequired,
-		http.StatusRequestTimeout, http.StatusConflict, http.StatusGone, http.StatusLengthRequired,
-		http.StatusPreconditionFailed, http.StatusRequestEntityTooLarge, http.StatusRequestURITooLong, http.StatusUnsupportedMediaType,
-		http.StatusRequestedRangeNotSatisfiable, http.StatusExpectationFailed, http.StatusTeapot,
-
-		http.StatusInternalServerError, http.StatusNotImplemented, http.StatusBadGateway,
-		http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusHTTPVersionNotSupported,
-	}
-
-	agent.HTTPErrorCounters = make(map[int]metrics.Counter, len(httpStatuses))
-	for _, statusCode := range httpStatuses {
+	agent.HTTPErrorCounters = make(map[int]metrics.Counter, len(httpErrors))
+	for statusCode := range httpErrors {
 		agent.HTTPErrorCounters[statusCode] = metrics.NewCounter()
 	}
 	for _, counters := range agent.HTTPPathErrorCounters {
-		for _, statusCode := range httpStatuses {
+		for statusCode := range httpErrors {
 			counters[statusCode] = metrics.NewCounter()
 		}
 	}
+	agent.HTTPRequestErrorCounter = metrics.NewCounter()
 }
 
 //Print debug messages

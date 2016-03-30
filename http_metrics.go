@@ -1,10 +1,11 @@
 package gorelic
 
 import (
-	metrics "github.com/yvasiyarov/go-metrics"
-	"github.com/yvasiyarov/newrelic_platform_go"
 	"net/http"
 	"time"
+
+	metrics "github.com/yvasiyarov/go-metrics"
+	"github.com/yvasiyarov/newrelic_platform_go"
 )
 
 type tHTTPHandlerFunc func(http.ResponseWriter, *http.Request)
@@ -41,7 +42,7 @@ func (handler *tHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	}
 }
 
-func addHTTPMericsToComponent(component newrelic_platform_go.IComponent, timer metrics.Timer) {
+func addHTTPMericsToComponent(component newrelic_platform_go.IComponent, timer metrics.Timer, reqCounter metrics.Counter, errCounter metrics.Counter) {
 	rate1 := &timerRate1Metrica{
 		baseTimerMetrica: &baseTimerMetrica{
 			name:       "http/throughput/1minute",
@@ -113,4 +114,37 @@ func addHTTPMericsToComponent(component newrelic_platform_go.IComponent, timer m
 		},
 	}
 	component.AddMetrica(responseTimePercentile95)
+
+	component.AddMetrica(&counterByStatusMetrica{
+		counter: reqCounter,
+		name:    "http/requests",
+		units:   "count",
+	})
+
+	component.AddMetrica(&errorRateMetrica{
+		requestCounter: reqCounter,
+		errorCounter:   errCounter,
+		name:           "http/errorRate",
+		units:          "value",
+	})
+}
+
+// New metrica collector - counter per each http status code.
+type errorRateMetrica struct {
+	requestCounter metrics.Counter
+	errorCounter   metrics.Counter
+	name           string
+	units          string
+}
+
+// metrics.IMetrica interface implementation.
+func (m *errorRateMetrica) GetName() string { return m.name }
+
+func (m *errorRateMetrica) GetUnits() string { return m.units }
+
+func (m *errorRateMetrica) GetValue() (float64, error) {
+	if m.requestCounter.Count() == 0 {
+		return 0, nil
+	}
+	return float64(m.errorCounter.Count()) / float64(m.requestCounter.Count()), nil
 }
