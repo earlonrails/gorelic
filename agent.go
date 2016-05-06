@@ -27,7 +27,7 @@ const (
 
 	//DefaultAgentGuid is plugin ID in NewRelic.
 	//You should not change it unless you want to create your own plugin.
-	DefaultAgentGuid = "com.github.tehleach.gopm"
+	DefaultAgentGuid = "com.github.earlonrails.GoRelic"
 
 	//CurrentAgentVersion is plugin version
 	CurrentAgentVersion = "0.0.1"
