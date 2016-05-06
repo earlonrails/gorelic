@@ -27,10 +27,10 @@ const (
 
 	//DefaultAgentGuid is plugin ID in NewRelic.
 	//You should not change it unless you want to create your own plugin.
-	DefaultAgentGuid = "com.github.yvasiyarov.GoRelic"
+	DefaultAgentGuid = "com.github.tehleach.gopm"
 
 	//CurrentAgentVersion is plugin version
-	CurrentAgentVersion = "0.0.6"
+	CurrentAgentVersion = "0.0.1"
 
 	//DefaultAgentName in NewRelic GUI. You can change it.
 	DefaultAgentName = "Go daemon"
@@ -46,14 +46,17 @@ type Agent struct {
 	CollectGcStat               bool
 	CollectMemoryStat           bool
 	CollectHTTPStat             bool
-	CollectHTTPStatuses         bool
 	GCPollInterval              int
 	MemoryAllocatorPollInterval int
 	AgentGUID                   string
 	AgentVersion                string
 	plugin                      *newrelic_platform_go.NewrelicPlugin
 	HTTPTimer                   metrics.Timer
+	HTTPRequestCounter          metrics.Counter
+	HTTPRequestErrorCounter     metrics.Counter
 	HTTPStatusCounters          map[int]metrics.Counter
+	HTTPErrorCounters           map[int]metrics.Counter
+	HTTPPathErrorCounters       map[string]map[int]metrics.Counter
 	Tracer                      *Tracer
 	CustomMetrics               []newrelic_platform_go.IMetrica
 
@@ -76,6 +79,7 @@ func NewAgent() *Agent {
 		AgentVersion:                CurrentAgentVersion,
 		Tracer:                      nil,
 		CustomMetrics:               make([]newrelic_platform_go.IMetrica, 0),
+		HTTPPathErrorCounters:       make(map[string]map[int]metrics.Counter),
 	}
 	return agent
 }
@@ -83,25 +87,52 @@ func NewAgent() *Agent {
 // our custom component
 type resettableComponent struct {
 	newrelic_platform_go.IComponent
-	counters map[int]metrics.Counter
+	requestCounter      metrics.Counter
+	requestErrorCounter metrics.Counter
+	statusCounters      map[int]metrics.Counter
+	errorCounters       map[int]metrics.Counter
+	errorPathCounters   map[string]map[int]metrics.Counter
 }
 
 // newrelic_platform_go.IComponent interface implementation
 func (c resettableComponent) ClearSentData() {
 	c.IComponent.ClearSentData()
-	for _, counter := range c.counters {
+	c.requestCounter.Clear()
+	c.requestErrorCounter.Clear()
+	for _, counter := range c.statusCounters {
 		counter.Clear()
+	}
+	for _, counter := range c.errorCounters {
+		counter.Clear()
+	}
+	for _, counters := range c.errorPathCounters {
+		for _, counter := range counters {
+			counter.Clear()
+		}
 	}
 }
 
+type statusLoggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusLoggingResponseWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
 //WrapHTTPHandlerFunc  instrument HTTP handler functions to collect HTTP metrics
-func (agent *Agent) WrapHTTPHandlerFunc(h tHTTPHandlerFunc) tHTTPHandlerFunc {
+func (agent *Agent) WrapHTTPHandlerFunc(h tHTTPHandlerFunc, path string) tHTTPHandlerFunc {
+	agent.registerHTTPPath(path)
 	agent.CollectHTTPStat = true
 	agent.initTimer()
 	return func(w http.ResponseWriter, req *http.Request) {
 		proxy := newHTTPHandlerFunc(h)
 		proxy.timer = agent.HTTPTimer
-		proxy.ServeHTTP(w, req)
+		myW := &statusLoggingResponseWriter{w, 200}
+		proxy.ServeHTTP(myW, req)
+		agent.recordResponse(path, myW.status)
 	}
 }
 
@@ -126,7 +157,6 @@ func (agent *Agent) Run() error {
 		return errors.New("please, pass a valid newrelic license key")
 	}
 
-
 	var component newrelic_platform_go.IComponent
 	component = newrelic_platform_go.NewPluginComponent(agent.NewrelicName, agent.AgentGUID, agent.Verbose)
 
@@ -147,20 +177,24 @@ func (agent *Agent) Run() error {
 
 	if agent.CollectHTTPStat {
 		agent.initTimer()
-		addHTTPMericsToComponent(component, agent.HTTPTimer)
+		agent.initStatusCounters()
+		agent.initErrorCounters()
+
+		addHTTPMericsToComponent(component, agent.HTTPTimer, agent.HTTPRequestCounter, agent.HTTPRequestErrorCounter)
 		agent.debug(fmt.Sprintf("Init HTTP metrics collection."))
+
+		component = &resettableComponent{component, agent.HTTPRequestCounter, agent.HTTPRequestErrorCounter, agent.HTTPStatusCounters, agent.HTTPErrorCounters, agent.HTTPPathErrorCounters}
+		addHTTPStatusMetricsToComponent(component, agent.HTTPStatusCounters)
+		agent.debug(fmt.Sprintf("Init HTTP status metrics collection."))
+
+		addHTTPErrorMetricsToComponent(component, agent.HTTPErrorCounters)
+		addHTTPPathErrorMetricsToComponent(component, agent.HTTPPathErrorCounters)
+		agent.debug(fmt.Sprintf("Init HTTP status metrics collection."))
 	}
 
 	for _, metric := range agent.CustomMetrics {
 		component.AddMetrica(metric)
 		agent.debug(fmt.Sprintf("Init %s metric collection.", metric.GetName()))
-	}
-
-	if agent.CollectHTTPStatuses {
-		agent.initStatusCounters()
-		component = &resettableComponent{component, agent.HTTPStatusCounters}
-		addHTTPStatusMetricsToComponent(component, agent.HTTPStatusCounters)
-		agent.debug(fmt.Sprintf("Init HTTP status metrics collection."))
 	}
 
 	// Init newrelic reporting plugin.
@@ -176,6 +210,26 @@ func (agent *Agent) Run() error {
 	return nil
 }
 
+//RegisterHTTPPath registers a path for error status tracking
+func (agent *Agent) registerHTTPPath(path string) {
+	if agent.HTTPPathErrorCounters[path] == nil {
+		agent.HTTPPathErrorCounters[path] = make(map[int]metrics.Counter)
+	}
+}
+
+//RecordResponse increments different counters accordingly for an HTTP request
+func (agent *Agent) recordResponse(path string, code int) {
+	agent.HTTPRequestCounter.Inc(1)
+	agent.HTTPStatusCounters[code].Inc(1)
+	if httpErrors[code] {
+		agent.HTTPRequestErrorCounter.Inc(1)
+		agent.HTTPErrorCounters[code].Inc(1)
+		if counters := agent.HTTPPathErrorCounters[path]; counters != nil {
+			counters[code].Inc(1)
+		}
+	}
+}
+
 //Initialize global metrics.Timer object, used to collect HTTP metrics
 func (agent *Agent) initTimer() {
 	if agent.HTTPTimer == nil {
@@ -185,29 +239,25 @@ func (agent *Agent) initTimer() {
 
 //Initialize metrics.Counters objects, used to collect HTTP statuses
 func (agent *Agent) initStatusCounters() {
-	httpStatuses := []int{
-		http.StatusContinue, http.StatusSwitchingProtocols,
-
-		http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNonAuthoritativeInfo,
-		http.StatusNoContent, http.StatusResetContent, http.StatusPartialContent,
-
-		http.StatusMultipleChoices, http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
-		http.StatusNotModified, http.StatusUseProxy, http.StatusTemporaryRedirect,
-
-		http.StatusBadRequest, http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden,
-		http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotAcceptable, http.StatusProxyAuthRequired,
-		http.StatusRequestTimeout, http.StatusConflict, http.StatusGone, http.StatusLengthRequired,
-		http.StatusPreconditionFailed, http.StatusRequestEntityTooLarge, http.StatusRequestURITooLong, http.StatusUnsupportedMediaType,
-		http.StatusRequestedRangeNotSatisfiable, http.StatusExpectationFailed, http.StatusTeapot,
-
-		http.StatusInternalServerError, http.StatusNotImplemented, http.StatusBadGateway,
-		http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusHTTPVersionNotSupported,
-	}
-
 	agent.HTTPStatusCounters = make(map[int]metrics.Counter, len(httpStatuses))
 	for _, statusCode := range httpStatuses {
 		agent.HTTPStatusCounters[statusCode] = metrics.NewCounter()
 	}
+	agent.HTTPRequestCounter = metrics.NewCounter()
+}
+
+//Initialize metrics.Counters objects, used to collect HTTP statuses
+func (agent *Agent) initErrorCounters() {
+	agent.HTTPErrorCounters = make(map[int]metrics.Counter, len(httpErrors))
+	for statusCode := range httpErrors {
+		agent.HTTPErrorCounters[statusCode] = metrics.NewCounter()
+	}
+	for _, counters := range agent.HTTPPathErrorCounters {
+		for statusCode := range httpErrors {
+			counters[statusCode] = metrics.NewCounter()
+		}
+	}
+	agent.HTTPRequestErrorCounter = metrics.NewCounter()
 }
 
 //Print debug messages
