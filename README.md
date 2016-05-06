@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/earlonrails/gorelic.png)](https://travis-ci.org/earlonrails/gorelic)
+
 # GoRelic
 
 New Relic agent for Go runtime. It collect a lot of metrics about scheduler, garbage collector and memory allocator and 
