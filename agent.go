@@ -166,7 +166,7 @@ func (agent *Agent) Run() error {
 
 	// Check agent flags and add relevant metrics.
 	if agent.CollectGcStat {
-		addGCMericsToComponent(component, agent.GCPollInterval)
+		addGCMetricsToComponent(component, agent.GCPollInterval)
 		agent.debug(fmt.Sprintf("Init GC metrics collection. Poll interval %d seconds.", agent.GCPollInterval))
 	}
 
