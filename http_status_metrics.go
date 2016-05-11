@@ -3,8 +3,8 @@ package gorelic
 import (
 	"fmt"
 
-	"github.com/yvasiyarov/go-metrics"
-	"github.com/yvasiyarov/newrelic_platform_go"
+	metrics "github.com/yvasiyarov/go-metrics"
+	nrpg "github.com/yvasiyarov/newrelic_platform_go"
 )
 
 // New metrica collector - counter per each http status code.
@@ -22,7 +22,7 @@ func (m *counterByStatusMetrica) GetUnits() string { return m.units }
 func (m *counterByStatusMetrica) GetValue() (float64, error) { return float64(m.counter.Count()), nil }
 
 // addHTTPStatusMetricsToComponent initializes counter metrics for all http statuses and adds them to the component.
-func addHTTPStatusMetricsToComponent(component newrelic_platform_go.IComponent, statusCounters map[int]metrics.Counter) {
+func addHTTPStatusMetricsToComponent(component nrpg.IComponent, statusCounters map[int]metrics.Counter) {
 	for statusCode, counter := range statusCounters {
 		component.AddMetrica(&counterByStatusMetrica{
 			counter: counter,

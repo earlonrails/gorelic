@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"github.com/yvasiyarov/gorelic"
+	"github.com/earlonrails/gorelic"
 	"log"
 	"math/rand"
 	"runtime"

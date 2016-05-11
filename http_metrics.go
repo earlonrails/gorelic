@@ -5,7 +5,7 @@ import (
 	"time"
 
 	metrics "github.com/yvasiyarov/go-metrics"
-	"github.com/yvasiyarov/newrelic_platform_go"
+	nrpg "github.com/yvasiyarov/newrelic_platform_go"
 )
 
 type tHTTPHandlerFunc func(http.ResponseWriter, *http.Request)
@@ -42,7 +42,7 @@ func (handler *tHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	}
 }
 
-func addHTTPMericsToComponent(component newrelic_platform_go.IComponent, timer metrics.Timer, reqCounter metrics.Counter, errCounter metrics.Counter) {
+func addHTTPMericsToComponent(component nrpg.IComponent, timer metrics.Timer, reqCounter metrics.Counter, errCounter metrics.Counter) {
 	rate1 := &timerRate1Metrica{
 		baseTimerMetrica: &baseTimerMetrica{
 			name:       "http/throughput/1minute",

@@ -2,26 +2,26 @@
 
 # GoRelic
 
-New Relic agent for Go runtime. It collect a lot of metrics about scheduler, garbage collector and memory allocator and 
+New Relic agent for Go runtime. It collect a lot of metrics about scheduler, garbage collector and memory allocator and
 send them to NewRelic.
 
-### Requirements  
+### Requirements
 - Go 1.1 or higher
-- github.com/yvasiyarov/gorelic
+- github.com/earlonrails/gorelic
 - github.com/yvasiyarov/newrelic_platform_go
-- github.com/yvasiyarov/go-metrics
+- github.com/armon/go-metrics
 
-You have to install manually only first two dependencies. All other dependencies will be installed automatically 
-by Go toolchain.   
+You have to install manually only first two dependencies. All other dependencies will be installed automatically
+by Go toolchain.
 
-### Installation   
+### Installation
 ```bash
-go get github.com/yvasiyarov/gorelic
+go get github.com/earlonrails/gorelic
 ```
-and add to the initialization part of your application following code:  
+and add to the initialization part of your application following code:
 ```go
 import (
-    "github.com/yvasiyarov/gorelic"
+    "github.com/earlonrails/gorelic"
 )
 ....
 
@@ -32,18 +32,18 @@ agent.Run()
 
 ```
 
-### Middleware  
+### Middleware
 If you using Beego, Martini, Revel, Kami or Gin framework you can hook up gorelic with your application by using the following middleware:
-- https://github.com/yvasiyarov/beego_gorelic   
-- https://github.com/yvasiyarov/martini_gorelic   
-- https://github.com/yvasiyarov/gocraft_gorelic   
+- https://github.com/yvasiyarov/beego_gorelic
+- https://github.com/yvasiyarov/martini_gorelic
+- https://github.com/yvasiyarov/gocraft_gorelic
 - http://wiki.colar.net/revel_newelic
 - https://github.com/jingweno/negroni-gorelic
 - https://github.com/brandfolder/gin-gorelic
 - [https://github.com/syntaqx/echo-middleware/gorelic](https://github.com/syntaqx/echo-middleware/tree/master/gorelic)
 - https://github.com/david4shure/kamigorelic
 
-### Configuration  
+### Configuration
 - NewrelicLicense - its the only mandatory setting of this agent.
 - NewrelicName - component name in NewRelic dashboard. Default value: "Go daemon"
 - NewrelicPollInterval - how often metrics will be sent to NewRelic. Default value: 60 seconds
@@ -58,24 +58,24 @@ If you using Beego, Martini, Revel, Kami or Gin framework you can hook up goreli
 ## Metrics reported by plugin
 This agent use functions exposed by runtime or runtime/debug packages to collect most important information about Go runtime.
 
-### General metrics   
+### General metrics
 - Runtime/General/NOGoroutines - number of runned go routines, as it reported by NumGoroutine() from runtime package
 - Runtime/General/NOCgoCalls - number of runned cgo calls, as it reported by NumCgoCall() from runtime package
 
-### Garbage collector metrics      
-- Runtime/GC/NumberOfGCCalls - Nuber of GC calls, as it reported by ReadGCStats() from runtime/debug 
+### Garbage collector metrics
+- Runtime/GC/NumberOfGCCalls - Nuber of GC calls, as it reported by ReadGCStats() from runtime/debug
 - Runtime/GC/PauseTotalTime - Total pause time diring GC calls, as it reported by ReadGCStats() from runtime/debug (in nanoseconds)
 - Runtime/GC/GCTime/Max - max GC time
 - Runtime/GC/GCTime/Min - min GC time
 - Runtime/GC/GCTime/Mean - GC mean time
 - Runtime/GC/GCTime/Percentile95 - 95% percentile of GC time
 
-All this metrics are measured in nanoseconds. Last 4 of them can be inaccurate if GC called more often then once in GCPollInterval. 
-If in your workload GC is called more often - you can consider decreasing value of GCPollInterval. 
+All this metrics are measured in nanoseconds. Last 4 of them can be inaccurate if GC called more often then once in GCPollInterval.
+If in your workload GC is called more often - you can consider decreasing value of GCPollInterval.
 But be careful, ReadGCStats() blocks mheap, so its not good idea to set GCPollInterval to very low values.
 
-### Memory allocator 
-- Component/Runtime/Memory/SysMem/Total - number of bytes/minute allocated from OS totally. 
+### Memory allocator
+- Component/Runtime/Memory/SysMem/Total - number of bytes/minute allocated from OS totally.
 - Component/Runtime/Memory/SysMem/Stack - number of bytes/minute allocated from OS for stacks.
 - Component/Runtime/Memory/SysMem/MSpan - number of bytes/minute allocated from OS for internal MSpan structs.
 - Component/Runtime/Memory/SysMem/MCache - number of bytes/minute allocated from OS for internal MCache structs.
@@ -87,7 +87,7 @@ But be careful, ReadGCStats() blocks mheap, so its not good idea to set GCPollIn
 - Component/Runtime/Memory/InUse/Total - total amount of memory in use
 - Component/Runtime/Memory/InUse/Heap - amount of memory in use for heap
 - Component/Runtime/Memory/InUse/MCacheInuse - amount of memory in use for MCache internal structures
-- Component/Runtime/Memory/InUse/MSpanInuse - amount of memory in use for MSpan internal structures  
+- Component/Runtime/Memory/InUse/MSpanInuse - amount of memory in use for MSpan internal structures
 - Component/Runtime/Memory/InUse/Stack - amount of memory in use for stacks
 
 ### Process metrics
@@ -96,19 +96,19 @@ But be careful, ReadGCStats() blocks mheap, so its not good idea to set GCPollIn
 - Runtime/System/Memory/VmPeakSize - VM max size
 - Runtime/System/Memory/VmCurrent  - VM current size
 - Runtime/System/Memory/RssPeak    - max size of resident memory set
-- Runtime/System/Memory/RssCurrent - current size of resident memory set   
+- Runtime/System/Memory/RssCurrent - current size of resident memory set
 
 All this metrics collected once in MemoryAllocatorPollInterval. In order to collect this statistic agent use ReadMemStats() routine.
 This routine calls stoptheworld() internally and it block everything. So, please, consider this when you change MemoryAllocatorPollInterval value.
 
-### HTTP metrics   
-- throughput (requests per second), calculated for last minute  
-- mean throughput (requests per second)   
-- mean response time  
-- min response time  
-- max response time  
+### HTTP metrics
+- throughput (requests per second), calculated for last minute
+- mean throughput (requests per second)
+- mean response time
+- min response time
+- max response time
 - 75%, 90%, 95% percentiles for response time
- 
+
 
 In order to collect HTTP metrics, handler functions must be wrapped using WrapHTTPHandlerFunc:
 
@@ -122,9 +122,9 @@ func anyMethod() {
   // Trace the whole method.
   t := agent.Tracer.BeginTrace("My traced method")
   defer t.EndTrace()
-  
+
   ...Code here
-  
+
   // Trace a block of code
   agent.Tracer.Trace("block trace", func() {
      .. Code here

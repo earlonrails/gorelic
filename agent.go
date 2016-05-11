@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	metrics "github.com/yvasiyarov/go-metrics"
-	"github.com/yvasiyarov/newrelic_platform_go"
+	nrpg "github.com/yvasiyarov/newrelic_platform_go"
 )
 
 const (
@@ -50,7 +50,7 @@ type Agent struct {
 	MemoryAllocatorPollInterval int
 	AgentGUID                   string
 	AgentVersion                string
-	plugin                      *newrelic_platform_go.NewrelicPlugin
+	plugin                      *nrpg.NewrelicPlugin
 	HTTPTimer                   metrics.Timer
 	HTTPRequestCounter          metrics.Counter
 	HTTPRequestErrorCounter     metrics.Counter
@@ -58,7 +58,7 @@ type Agent struct {
 	HTTPErrorCounters           map[int]metrics.Counter
 	HTTPPathErrorCounters       map[string]map[int]metrics.Counter
 	Tracer                      *Tracer
-	CustomMetrics               []newrelic_platform_go.IMetrica
+	CustomMetrics               []nrpg.IMetrica
 
 	// All HTTP requests will be done using this client. Change it if you need
 	// to use a proxy.
@@ -78,7 +78,7 @@ func NewAgent() *Agent {
 		AgentGUID:                   DefaultAgentGuid,
 		AgentVersion:                CurrentAgentVersion,
 		Tracer:                      nil,
-		CustomMetrics:               make([]newrelic_platform_go.IMetrica, 0),
+		CustomMetrics:               make([]nrpg.IMetrica, 0),
 		HTTPPathErrorCounters:       make(map[string]map[int]metrics.Counter),
 	}
 	return agent
@@ -86,7 +86,7 @@ func NewAgent() *Agent {
 
 // our custom component
 type resettableComponent struct {
-	newrelic_platform_go.IComponent
+	nrpg.IComponent
 	requestCounter      metrics.Counter
 	requestErrorCounter metrics.Counter
 	statusCounters      map[int]metrics.Counter
@@ -94,7 +94,7 @@ type resettableComponent struct {
 	errorPathCounters   map[string]map[int]metrics.Counter
 }
 
-// newrelic_platform_go.IComponent interface implementation
+// nrpg.IComponent interface implementation
 func (c resettableComponent) ClearSentData() {
 	c.IComponent.ClearSentData()
 	c.requestCounter.Clear()
@@ -147,7 +147,7 @@ func (agent *Agent) WrapHTTPHandler(h http.Handler) http.Handler {
 }
 
 //AddCustomMetric adds metric to be collected periodically with NewrelicPollInterval interval
-func (agent *Agent) AddCustomMetric(metric newrelic_platform_go.IMetrica) {
+func (agent *Agent) AddCustomMetric(metric nrpg.IMetrica) {
 	agent.CustomMetrics = append(agent.CustomMetrics, metric)
 }
 
@@ -157,8 +157,8 @@ func (agent *Agent) Run() error {
 		return errors.New("please, pass a valid newrelic license key")
 	}
 
-	var component newrelic_platform_go.IComponent
-	component = newrelic_platform_go.NewPluginComponent(agent.NewrelicName, agent.AgentGUID, agent.Verbose)
+	var component nrpg.IComponent
+	component = nrpg.NewPluginComponent(agent.NewrelicName, agent.AgentGUID, agent.Verbose)
 
 	// Add default metrics and tracer.
 	addRuntimeMericsToComponent(component)
@@ -198,7 +198,7 @@ func (agent *Agent) Run() error {
 	}
 
 	// Init newrelic reporting plugin.
-	agent.plugin = newrelic_platform_go.NewNewrelicPlugin(agent.AgentVersion, agent.NewrelicLicense, agent.NewrelicPollInterval)
+	agent.plugin = nrpg.NewNewrelicPlugin(agent.AgentVersion, agent.NewrelicLicense, agent.NewrelicPollInterval)
 	agent.plugin.Client = agent.Client
 	agent.plugin.Verbose = agent.Verbose
 
@@ -219,8 +219,14 @@ func (agent *Agent) registerHTTPPath(path string) {
 
 //RecordResponse increments different counters accordingly for an HTTP request
 func (agent *Agent) recordResponse(path string, code int) {
-	agent.HTTPRequestCounter.Inc(1)
-	agent.HTTPStatusCounters[code].Inc(1)
+	if agent.HTTPRequestCounter != nil {
+		agent.HTTPRequestCounter.Inc(1)
+	}
+
+	if agent.HTTPStatusCounters != nil {
+		agent.HTTPStatusCounters[code].Inc(1)
+	}
+
 	if httpErrors[code] {
 		agent.HTTPRequestErrorCounter.Inc(1)
 		agent.HTTPErrorCounters[code].Inc(1)

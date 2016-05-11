@@ -1,0 +1,6 @@
+package: .
+import:
+- package: github.com/yvasiyarov/go-metrics
+- package: github.com/yvasiyarov/newrelic_platform_go
+- package: github.com/onsi/ginkgo
+- package: github.com/onsi/gomega

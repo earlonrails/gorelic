@@ -3,12 +3,12 @@ package gorelic
 import (
 	"fmt"
 
-	"github.com/yvasiyarov/go-metrics"
-	"github.com/yvasiyarov/newrelic_platform_go"
+	metrics "github.com/yvasiyarov/go-metrics"
+	nrpg "github.com/yvasiyarov/newrelic_platform_go"
 )
 
 // addHTTPStatusMetricsToComponent initializes counter metrics for all http statuses and adds them to the component.
-func addHTTPErrorMetricsToComponent(component newrelic_platform_go.IComponent, statusCounters map[int]metrics.Counter) {
+func addHTTPErrorMetricsToComponent(component nrpg.IComponent, statusCounters map[int]metrics.Counter) {
 	for statusCode, counter := range statusCounters {
 		component.AddMetrica(&counterByStatusMetrica{
 			counter: counter,
@@ -19,7 +19,7 @@ func addHTTPErrorMetricsToComponent(component newrelic_platform_go.IComponent, s
 }
 
 // addPerPathHTTPStatusMetricsToComponent initializes counter metrics for all http statuses and adds them to the component.
-func addHTTPPathErrorMetricsToComponent(component newrelic_platform_go.IComponent, statusCounters map[string]map[int]metrics.Counter) {
+func addHTTPPathErrorMetricsToComponent(component nrpg.IComponent, statusCounters map[string]map[int]metrics.Counter) {
 	for path, counters := range statusCounters {
 		for statusCode, counter := range counters {
 			component.AddMetrica(&counterByStatusMetrica{

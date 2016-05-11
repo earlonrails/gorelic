@@ -2,16 +2,16 @@ package gorelic
 
 import (
 	metrics "github.com/yvasiyarov/go-metrics"
-	"github.com/yvasiyarov/newrelic_platform_go"
+	nrpg "github.com/yvasiyarov/newrelic_platform_go"
 	"time"
 )
 
 type Tracer struct {
 	metrics   map[string]*TraceTransaction
-	component newrelic_platform_go.IComponent
+	component nrpg.IComponent
 }
 
-func newTracer(component newrelic_platform_go.IComponent) *Tracer {
+func newTracer(component nrpg.IComponent) *Tracer {
 	return &Tracer{make(map[string]*TraceTransaction), component}
 }
 
@@ -46,7 +46,7 @@ type TraceTransaction struct {
 	timer metrics.Timer
 }
 
-func (transaction *TraceTransaction) addMetricsToComponent(component newrelic_platform_go.IComponent) {
+func (transaction *TraceTransaction) addMetricsToComponent(component nrpg.IComponent) {
 	tracerMean := &timerMeanMetrica{
 		baseTimerMetrica: &baseTimerMetrica{
 			name:       transaction.name + "/mean",

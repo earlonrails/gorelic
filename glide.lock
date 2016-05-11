@@ -1,0 +1,14 @@
+hash: a9c01a39c7bbdfdb0719018bb686f5374ada3a3275b08fb13b9eca7614f2ebc6
+updated: 2016-05-10T14:32:54.688122245-07:00
+imports:
+- name: github.com/earlonrails/gorelic
+  version: 9acac40d7477ad546368b20acbde86f9cf7a16a3
+- name: github.com/onsi/ginkgo
+  version: 5437a97bf824dec14e58d68c56ee36e772670c2e
+- name: github.com/onsi/gomega
+  version: 7ce781ea776b2fd506491011353bded2e40c8467
+- name: github.com/yvasiyarov/go-metrics
+  version: c25f46c4b94079672242ec48a545e7ca9ebe3aec
+- name: github.com/yvasiyarov/newrelic_platform_go
+  version: db03d6dfd965ebc22dbfd910567c641b326ff055
+devImports: []

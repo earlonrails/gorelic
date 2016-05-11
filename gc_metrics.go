@@ -2,7 +2,7 @@ package gorelic
 
 import (
 	metrics "github.com/yvasiyarov/go-metrics"
-	"github.com/yvasiyarov/newrelic_platform_go"
+	nrpg "github.com/yvasiyarov/newrelic_platform_go"
 	"time"
 )
 
@@ -14,7 +14,7 @@ func newGCMetricaDataSource(pollInterval int) goMetricaDataSource {
 	return goMetricaDataSource{r}
 }
 
-func addGCMetricsToComponent(component newrelic_platform_go.IComponent, pollInterval int) {
+func addGCMetricsToComponent(component nrpg.IComponent, pollInterval int) {
 	metrics := []*baseGoMetrica{
 		&baseGoMetrica{
 			name:          "NumberOfGCCalls",

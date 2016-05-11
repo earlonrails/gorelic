@@ -2,3 +2,4 @@
 *.swp
 examples/example1
 examples/example_web
+vendor/*
